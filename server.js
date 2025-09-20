@@ -44,7 +44,6 @@ function getPing() {
     });
 }
 
-
 function getCpuUsage() {
     return new Promise((resolve) => {
         const startCpus = os.cpus();
@@ -59,12 +58,11 @@ function getCpuUsage() {
                 const startTimes = startCpu.times;
                 const endTimes = cpu.times;
 
-                // Calculate the delta for each mode
                 const idle = endTimes.idle - startTimes.idle;
-                const total = (endTimes.user - startTimes.user) + 
-                              (endTimes.nice - startTimes.nice) + 
-                              (endTimes.sys - startTimes.sys) + 
-                              (endTimes.irq - startTimes.irq) + 
+                const total = (endTimes.user - startTimes.user) +
+                              (endTimes.nice - startTimes.nice) +
+                              (endTimes.sys - startTimes.sys) +
+                              (endTimes.irq - startTimes.irq) +
                               idle;
 
                 totalIdle += idle;
@@ -83,7 +81,6 @@ async function getSystemPerformance() {
     const usedMem = totalMem - freeMem;
     const ramPercent = ((usedMem / totalMem) * 100).toFixed(2);
 
-    // Yeni fonksiyonları burada kullanıyoruz
     const cpuPercent = await getCpuUsage();
     const ping = await getPing();
 
@@ -96,13 +93,12 @@ async function getSystemPerformance() {
     };
 }
 
-
 // Save history to JSON file
 function saveHistory() {
     fs.writeFileSync(historyFile, JSON.stringify(performanceHistory, null, 2));
 }
 
-// Record performance every 1 minute
+// Record performance every 1 hour
 async function recordPerformance() {
     const stats = await getSystemPerformance();
     const entry = {
@@ -117,28 +113,37 @@ async function recordPerformance() {
 
     // Calculate 1-hour averages for graph
     const ONE_HOUR = 60 * 60 * 1000;
+    const SIX_HOURS = 6 * ONE_HOUR; // Keep data for 6 hours
     const now = Date.now();
-    const lastHour = performanceHistory.filter(e => now - new Date(e.time).getTime() <= ONE_HOUR);
+    const lastSixHours = performanceHistory.filter(e => now - new Date(e.time).getTime() <= SIX_HOURS);
 
-    if (lastHour.length > 0) {
-        const avgCpu = lastHour.reduce((acc, cur) => acc + cur.cpu, 0) / lastHour.length;
-        const avgRam = lastHour.reduce((acc, cur) => acc + cur.ram, 0) / lastHour.length;
-        const avgPing = lastHour.reduce((acc, cur) => acc + cur.ping, 0) / lastHour.length;
+    if (lastSixHours.length > 0) {
+        // Group data by hour
+        const hourlyData = [];
+        for (let i = 5; i >= 0; i--) {
+            const hourStart = now - (i + 1) * ONE_HOUR;
+            const hourEnd = now - i * ONE_HOUR;
+            const hourEntries = lastSixHours.filter(e => {
+                const time = new Date(e.time).getTime();
+                return time >= hourStart && time < hourEnd;
+            });
 
-        // Keep only a reasonable amount of data for the graph (e.g., last 24 hours)
-        if (performanceData.length > 24) {
-            performanceData.shift(); 
+            const avgCpu = hourEntries.length > 0 ? hourEntries.reduce((acc, cur) => acc + cur.cpu, 0) / hourEntries.length : 0;
+            const avgRam = hourEntries.length > 0 ? hourEntries.reduce((acc, cur) => acc + cur.ram, 0) / hourEntries.length : 0;
+            const avgPing = hourEntries.length > 0 ? hourEntries.reduce((acc, cur) => acc + cur.ping, 0) / hourEntries.length : 0;
+
+            hourlyData.push({
+                time: new Date(hourEnd).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+                cpu: Math.round(avgCpu),
+                ram: Math.round(avgRam),
+                ping: Math.round(avgPing),
+            });
         }
 
-        performanceData.push({
-            time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-            cpu: Math.round(avgCpu),
-            ram: Math.round(avgRam),
-            ping: Math.round(avgPing),
-        });
+        performanceData = hourlyData;
 
-        // Cleanup old history that is older than an hour to save space
-        const recentHistory = performanceHistory.filter(e => now - new Date(e.time).getTime() <= ONE_HOUR);
+        // Cleanup old history (older than 6 hours)
+        const recentHistory = performanceHistory.filter(e => now - new Date(e.time).getTime() <= SIX_HOURS);
         if (performanceHistory.length !== recentHistory.length) {
             performanceHistory = recentHistory;
             saveHistory();
@@ -146,13 +151,12 @@ async function recordPerformance() {
     }
 }
 
-
-setInterval(recordPerformance, 60 * 1000 * 30); // 30 minute
+setInterval(recordPerformance, 60 * 1000 * 60); // 1 hour
 recordPerformance(); // Run once on start
 
 // ==================== MONITOR API ====================
-app.get("/api/monitor", async (_req, res) => { // async olarak değiştirildi
-    const stats = await getSystemPerformance(); // await eklendi
+app.get("/api/monitor", async (_req, res) => {
+    const stats = await getSystemPerformance();
     res.json({
         cpu: stats?.cpuUsage ?? "N/A",
         ram: stats?.ramUsage ?? "N/A",
