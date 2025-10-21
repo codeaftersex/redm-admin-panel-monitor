@@ -2,7 +2,7 @@
   "name": "redm-admin-panel-monitor",
   "version": "1.0.0",
   "main": "server.js",
-   "type": "commonjs",
+  "type": "commonjs",
   "dependencies": {
     "cors": "^2.8.5",
     "express": "^4.18.2",
